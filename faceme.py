@@ -24,6 +24,13 @@ with io.open(file_name, 'rb') as image_file:
 # Send the image to the cloud vision service to a analyze
 image = vision_client.image(content=content)
 
+# Performs label detection on the image file
+labels = image.detect_labels()
+
+print('Labels:')
+for label in labels:
+    print(label.description)
+
 # Tell the vision service to look for faces in the image
 faces = image.detect_faces(limit=30)
 print "%d faces" % len(faces)
