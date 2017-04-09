@@ -4,12 +4,12 @@ import io
 import os
 import sys
 
-# first: gcloud auth application-default login
+# first you have to authenticate for the default application: gcloud auth application-default login
 
 # Imports the Google Cloud client library
 from google.cloud import vision
 
-# Instantiates a client
+# Instantiates a vision service client
 vision_client = vision.Client()
 
 # The name of the image file to annotate
@@ -26,7 +26,6 @@ image = vision_client.image(content=content)
 
 # Performs label detection on the image file
 labels = image.detect_labels()
-
 print('Labels:')
 for label in labels:
     print(label.description)
