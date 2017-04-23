@@ -4,8 +4,6 @@ import io
 import os
 import sys
 
-LABEL_PERSON = 'person'
-
 # first you have to authenticate for the default application: gcloud auth application-default login
 
 # Imports the Google Cloud client library
