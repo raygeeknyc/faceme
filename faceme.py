@@ -37,7 +37,6 @@ def findFaces(image, canvas):
     faces = image.detect_faces(limit=30)
     print "%d faces" % len(faces)
 
-
     frame_color_joy = (128,256,128)
     frame_color_angry = (236,128,128)
     frame_color_meh = (192,192,256)
@@ -62,6 +61,7 @@ def findFaces(image, canvas):
            canvas.line((start.x_coordinate,start.y_coordinate, end.x_coordinate, end.y_coordinate), fill=frame_color, width=2)
            start = end
        canvas.line((start.x_coordinate,start.y_coordinate, first.x_coordinate, first.y_coordinate), fill=frame_color, width=2)
+    return (len(faces), joyful_faces, angry_faces)
 
 # Process the filenames specified on the command line
 for image_filename in sys.argv[1:]:
@@ -78,17 +78,17 @@ for image_filename in sys.argv[1:]:
         print(label.description)
 
     descriptions = [label.description for label in labels]
-    if LABEL_PERSON in descriptions:
+    (faces, joyful_faces, angry_faces) = findFaces(image, canvas)
+    if faces:
         # Show the image with highlights and report on the majority of moods detected
-        findFaces(image, canvas)
         if joyful_faces and joyful_faces > angry_faces:
             print "YAY!!! A happy scene!"
-        else if angry_faces and joyful_faces < angry_faces:
+        elif angry_faces and joyful_faces < angry_faces:
             print "Uh oh!!!  An angry scene!"
-        else if joyful_faces or angry_faces:
+        elif joyful_faces or angry_faces:
             print "A mixed crowd."
         else:
             print "meh."
     else:
-        print 'no people'
+        print 'No faces'
     im.show()
