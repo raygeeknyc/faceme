@@ -41,7 +41,7 @@ def findFaces(image, canvas):
     angry_faces = 0
     joyful_faces = 0
     for this_face in faces:
-       print "Confidence %f" % this_face.detection_confidence
+       # print "Confidence %f" % this_face.detection_confidence
        # Classify this face as joyful, angry or meh
        frame_color = frame_color_meh
        if this_face.joy is Likelihood.VERY_LIKELY or this_face.joy is Likelihood.LIKELY:
