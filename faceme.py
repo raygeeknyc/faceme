@@ -1,28 +1,25 @@
+# Import the packages we need for drawing and displaying images
 from PIL import Image, ImageDraw
+
+# Imports the Google Cloud client packages we need
+from google.cloud import vision
 from google.cloud.vision.likelihood import Likelihood
+
+# Import the packages we need for reading parameters and files
 import io
-import os
 import sys
 
 # first you have to authenticate for the default application: gcloud auth application-default login
 
-# Imports the Google Cloud client library
-from google.cloud import vision
-
 # Instantiates a vision service client
 vision_client = vision.Client()
-
 
 def loadImageFile(filename):
 # Loads the image into memory
 # Return the image way content
-    file_name = os.path.join(
-        os.path.dirname(__file__),
-        filename)
-    with io.open(file_name, 'rb') as image_file:
+    with io.open(filename, 'rb') as image_file:
         content = image_file.read()
     return content
-        
 
 def setImage(rawContent):
 # Send the image to the cloud vision service to a analyze
@@ -41,7 +38,10 @@ def findFaces(image, canvas):
     angry_faces = 0
     joyful_faces = 0
     for this_face in faces:
-       # print "Confidence %f" % this_face.detection_confidence
+       if this_face.detection_confidence < 0.9:
+          frame_width = 1
+       else:
+          frame_width = 3
        # Classify this face as joyful, angry or meh
        frame_color = frame_color_meh
        if this_face.joy is Likelihood.VERY_LIKELY or this_face.joy is Likelihood.LIKELY:
@@ -56,9 +56,9 @@ def findFaces(image, canvas):
        first = this_face.bounds.vertices[0]
        start = first
        for end in this_face.bounds.vertices[1:]:
-           canvas.line((start.x_coordinate,start.y_coordinate, end.x_coordinate, end.y_coordinate), fill=frame_color, width=2)
+           canvas.line((start.x_coordinate,start.y_coordinate, end.x_coordinate, end.y_coordinate), fill=frame_color, width=frame_width)
            start = end
-       canvas.line((start.x_coordinate,start.y_coordinate, first.x_coordinate, first.y_coordinate), fill=frame_color, width=2)
+       canvas.line((start.x_coordinate,start.y_coordinate, first.x_coordinate, first.y_coordinate), fill=frame_color, width=frame_width)
     return (len(faces), joyful_faces, angry_faces)
 
 # Process the filenames specified on the command line
