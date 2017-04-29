@@ -32,16 +32,16 @@ def findFaces(image, canvas):
     faces = image.detect_faces(limit=30)
     print "%d faces" % len(faces)
 
-    frame_color_joy = (128,256,128)
-    frame_color_angry = (236,128,128)
-    frame_color_meh = (192,192,256)
+    frame_color_joy = (64,256,128)
+    frame_color_angry = (256,64,128)
+    frame_color_meh = (128,128,256)
     angry_faces = 0
     joyful_faces = 0
     for this_face in faces:
        if this_face.detection_confidence < 0.9:
           frame_width = 1
        else:
-          frame_width = 3
+          frame_width = 4
        # Classify this face as joyful, angry or meh
        frame_color = frame_color_meh
        if this_face.joy is Likelihood.VERY_LIKELY or this_face.joy is Likelihood.LIKELY:
