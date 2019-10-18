@@ -60,12 +60,12 @@ def findFaces(image, canvas):
            frame_color = frame_color_angry
            angry_faces += 1
        # Draw a frame around this face's bounding polygon
-       first = this_face.bounds.vertices[0]
+       first = this_face.bounding_poly.vertices[0]
        start = first
-       for end in this_face.bounds.vertices[1:]:
-           canvas.line((start.x_coordinate,start.y_coordinate, end.x_coordinate, end.y_coordinate), fill=frame_color, width=frame_width)
+       for end in this_face.bounding_poly.vertices[1:]:
+           canvas.line((start.x, start.y, end.x, end.y), fill=frame_color, width=frame_width)
            start = end
-       canvas.line((start.x_coordinate,start.y_coordinate, first.x_coordinate, first.y_coordinate), fill=frame_color, width=frame_width)
+       canvas.line((start.x, start.y, first.x, first.y), fill=frame_color, width=frame_width)
     return (len(faces), joyful_faces, angry_faces)
 
 # Process the filenames specified on the command line
