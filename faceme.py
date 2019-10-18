@@ -3,16 +3,21 @@ from PIL import Image, ImageDraw
 
 # Imports the Google Cloud client packages we need
 from google.cloud import vision
-from google.cloud.vision.likelihood import Likelihood
+from google.cloud.vision import types
+
 
 # Import the packages we need for reading parameters and files
 import io
 import sys
 
-# first you have to authenticate for the default application: gcloud auth application-default login
+# first you have to authenticate for the default application:
+#   gcloud auth application-default login
 
 # Instantiates a vision service client
-vision_client = vision.Client()
+client = vision.ImageAnnotatorClient()
+
+likelihood_names = ('UNKNOWN', 'VERY_UNLIKELY', 'UNLIKELY', 'POSSIBLE',
+  'LIKELY', 'VERY_LIKELY')
 
 def loadImageFile(filename):
 # Loads the image into memory
@@ -24,12 +29,14 @@ def loadImageFile(filename):
 def setImage(rawContent):
 # Send the image to the cloud vision service to a analyze
 # Return the Google Vision Image
-    image = vision_client.image(content=rawContent)
+    image = types.Image(content=content)
     return image
 
 def findFaces(image, canvas):
     # Tell the vision service to look for faces in the image
-    faces = image.detect_faces(limit=30)
+    faces = client.face_detection(
+        image=image).face_annotations
+#
     print "%d faces" % len(faces)
 
     frame_color_joy = (64,256,128)
@@ -44,11 +51,11 @@ def findFaces(image, canvas):
           frame_width = 4
        # Classify this face as joyful, angry or meh
        frame_color = frame_color_meh
-       if this_face.joy is Likelihood.VERY_LIKELY or this_face.joy is Likelihood.LIKELY:
+       if likelihood_names[this_face.joy_likelihood] is 'VERY_LIKELY' or likelihood_names[this_face.joy_likelihood] is 'LIKELY':
            print "joy"
            frame_color = frame_color_joy
            joyful_faces += 1
-       if this_face.anger is Likelihood.VERY_LIKELY or this_face.anger is Likelihood.LIKELY:
+       if likelihood_names[this_face.anger_likelihood] is 'VERY_LIKELY' or likelihood_names[this_face.anger_likelihood] is 'LIKELY':
            print "anger"
            frame_color = frame_color_angry
            angry_faces += 1
@@ -67,7 +74,7 @@ for image_filename in sys.argv[1:]:
     image = setImage(content)
 
     # Performs label detection on the image file
-    labels = image.detect_labels()
+    labels = client.label_detection(image=image).label_annotations
     # Create a PIL image that we can draw on
     im = Image.open(io.BytesIO(content))
     canvas = ImageDraw.Draw(im) 
