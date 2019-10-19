@@ -16,6 +16,7 @@ import sys
 # Instantiates a vision service client
 client = vision.ImageAnnotatorClient()
 
+# Enumerate the likelihood names that are defined by Cloud Vision 1
 likelihood_names = ('UNKNOWN', 'VERY_UNLIKELY', 'UNLIKELY', 'POSSIBLE',
   'LIKELY', 'VERY_LIKELY')
 
@@ -96,4 +97,5 @@ for image_filename in sys.argv[1:]:
             print "meh."
     else:
         print 'No faces'
+    # TODO(raygeeknyc) Replace this with some image display that lets me control the window's geometry and lifecycle
     im.show()
