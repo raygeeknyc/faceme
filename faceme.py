@@ -1,5 +1,7 @@
 # Import the packages we need for drawing and displaying images
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageTk
+
+import Tkinter
 
 # Imports the Google Cloud client packages we need
 from google.cloud import vision
@@ -18,6 +20,20 @@ client = vision.ImageAnnotatorClient()
 
 likelihood_names = ('UNKNOWN', 'VERY_UNLIKELY', 'UNLIKELY', 'POSSIBLE',
   'LIKELY', 'VERY_LIKELY')
+
+image_window = None
+
+def showCurrentImage(window, image):
+  if window == None:
+    window = Tkinter.Tk()
+
+  width, height = image.size
+  canvas = Tkinter.Canvas(window, width = width, height = height)
+  canvas.pack()
+
+  photo = ImageTk.PhotoImage(image=image)
+  canvas.create_image(0, 0, image=photo, anchor=Tkinter.NW)
+  window.mainloop()
 
 def loadImageFile(filename):
 # Loads the image into memory
@@ -96,4 +112,4 @@ for image_filename in sys.argv[1:]:
             print "meh."
     else:
         print 'No faces'
-    im.show()
+    showCurrentImage(image_window, im)
