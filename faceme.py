@@ -2,6 +2,7 @@
 from PIL import Image, ImageDraw, ImageTk
 
 import Tkinter
+import os
 
 # Imports the Google Cloud client packages we need
 from google.cloud import vision
@@ -23,10 +24,11 @@ likelihood_names = ('UNKNOWN', 'VERY_UNLIKELY', 'UNLIKELY', 'POSSIBLE',
 
 image_window = None
 
-def showCurrentImage(window, image):
+def showCurrentImage(window, image, window_title):
   if window == None:
     window = Tkinter.Tk()
 
+  window.title(window_title)
   width, height = image.size
   canvas = Tkinter.Canvas(window, width = width, height = height)
   canvas.pack()
@@ -112,4 +114,4 @@ for image_filename in sys.argv[1:]:
             print "meh."
     else:
         print 'No faces'
-    showCurrentImage(image_window, im)
+    showCurrentImage(image_window, im, os.path.basename(image_filename))
