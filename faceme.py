@@ -28,8 +28,13 @@ def showCurrentImage(window, image, window_title):
   if window == None:
     window = Tkinter.Tk()
 
-  window.title(window_title)
   width, height = image.size
+  if width > window.winfo_screenwidth() or height > window.winfo_screenheight():
+    resize_ratio = min(float(window.winfo_screenwidth())/width, float(window.winfo_screenheight())/height)
+    new_size = int(float(width)*resize_ratio), int(float(height)*resize_ratio)
+    print("Resizing large image to: {}".format(new_size))
+    image = image.resize(new_size, Image.ANTIALIAS)
+  window.title(window_title)
   canvas = Tkinter.Canvas(window, width = width, height = height)
   canvas.pack()
 
@@ -53,7 +58,7 @@ def setImage(rawContent):
 def findFaces(image, canvas):
     # Tell the vision service to look for faces in the image
     faces = client.face_detection(
-        image=image).face_annotations
+        image = image, image_context = None, max_results = 64).face_annotations
 #
     print "%d faces" % len(faces)
 
