@@ -1,5 +1,8 @@
 # Import the packages we need for drawing and displaying images
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageTk
+
+import Tkinter
+import os
 
 # Imports the Google Cloud client packages we need
 from google.cloud import vision
@@ -20,6 +23,26 @@ client = vision.ImageAnnotatorClient()
 likelihood_names = ('UNKNOWN', 'VERY_UNLIKELY', 'UNLIKELY', 'POSSIBLE',
   'LIKELY', 'VERY_LIKELY')
 
+image_window = None
+
+def showCurrentImage(window, image, window_title):
+  if window == None:
+    window = Tkinter.Tk()
+
+  width, height = image.size
+  if width > window.winfo_screenwidth() or height > window.winfo_screenheight():
+    resize_ratio = min(float(window.winfo_screenwidth())/width, float(window.winfo_screenheight())/height)
+    new_size = int(float(width)*resize_ratio), int(float(height)*resize_ratio)
+    print("Resizing large image to: {}".format(new_size))
+    image = image.resize(new_size, Image.ANTIALIAS)
+  window.title(window_title)
+  canvas = Tkinter.Canvas(window, width = width, height = height)
+  canvas.pack()
+
+  photo = ImageTk.PhotoImage(image=image)
+  canvas.create_image(0, 0, image=photo, anchor=Tkinter.NW)
+  window.mainloop()
+
 def loadImageFile(filename):
 # Loads the image into memory
 # Return the image way content
@@ -36,7 +59,7 @@ def setImage(rawContent):
 def findFaces(image, canvas):
     # Tell the vision service to look for faces in the image
     faces = client.face_detection(
-        image=image).face_annotations
+        image = image, image_context = None, max_results = 64).face_annotations
 #
     print "%d faces" % len(faces)
 
@@ -97,5 +120,4 @@ for image_filename in sys.argv[1:]:
             print "meh."
     else:
         print 'No faces'
-    # TODO(raygeeknyc) Replace this with some image display that lets me control the window's geometry and lifecycle
-    im.show()
+    showCurrentImage(image_window, im, os.path.basename(image_filename))
