@@ -61,37 +61,41 @@ def setImage(rawContent):
 def findFaces(image, canvas):
   # Tell the vision service to look for faces in the image
   faces = client.face_detection(
-    image = image, image_context = None, max_results = 64).face_annotations
-  print("{} faces".format(len(faces)))
+    image = image, image_context = None, max_results = 128).face_annotations
+  print("{} faces detected".format(len(faces)))
 
   frame_color_joy = (64,256,128)
   frame_color_angry = (256,64,128)
   frame_color_meh = (128,128,256)
-  angry_faces = 0
-  joyful_faces = 0
+  face_sentiments = {}
+  face_sentiments['joy'] = 0
+  face_sentiments['angry'] = 0
+  face_sentiments['meh'] = 0
   for this_face in faces:
     if this_face.detection_confidence < 0.9:
       frame_width = 1
     else:
       frame_width = 4
-      # Classify this face as joyful, angry or meh
+    # Classify this face as joyful, angry or meh
+    if likelihood_names[this_face.joy_likelihood] is 'VERY_LIKELY' or likelihood_names[this_face.joy_likelihood] is 'LIKELY':
+      frame_color = frame_color_joy
+      face_sentiments['joy'] += 1
+    elif likelihood_names[this_face.anger_likelihood] is 'VERY_LIKELY' or likelihood_names[this_face.anger_likelihood] is 'LIKELY':
+      frame_color = frame_color_angry
+      face_sentiments['angry'] += 1
+    else:
       frame_color = frame_color_meh
-      if likelihood_names[this_face.joy_likelihood] is 'VERY_LIKELY' or likelihood_names[this_face.joy_likelihood] is 'LIKELY':
-        print("joy")
-        frame_color = frame_color_joy
-        joyful_faces += 1
-      if likelihood_names[this_face.anger_likelihood] is 'VERY_LIKELY' or likelihood_names[this_face.anger_likelihood] is 'LIKELY':
-        print("anger")
-        frame_color = frame_color_angry
-        angry_faces += 1
-      # Draw a frame around this face's bounding polygon
-      first = this_face.bounding_poly.vertices[0]
-      start = first
-      for end in this_face.bounding_poly.vertices[1:]:
-        canvas.line((start.x, start.y, end.x, end.y), fill=frame_color, width=frame_width)
-        start = end
-      canvas.line((start.x, start.y, first.x, first.y), fill=frame_color, width=frame_width)
-  return (len(faces), joyful_faces, angry_faces)
+      face_sentiments['meh'] += 1
+    # Draw a frame around this face's bounding polygon
+    first = this_face.bounding_poly.vertices[0]
+    start = first
+    for end in this_face.bounding_poly.vertices[1:]:
+      canvas.line((start.x, start.y, end.x, end.y), fill=frame_color, width=frame_width)
+      start = end
+    canvas.line((start.x, start.y, first.x, first.y), fill=frame_color, width=frame_width)
+  if faces:   
+      print(face_sentiments)
+  return (len(faces), face_sentiments)
 
 def main(image_filenames):
   for image_filename in image_filenames:
@@ -105,18 +109,17 @@ def main(image_filenames):
     # Show all labels detected for the image
     labels = client.label_detection(image=image).label_annotations
     print("Labels:")
-    for label in labels:
-      print(label.description)
+    print([label.description for label in labels])
 
     # Show all of the faces detected for the image
-    (faces, joyful_faces, angry_faces) = findFaces(image, canvas)
+    (faces, face_sentiments) = findFaces(image, canvas)
     if faces:
       # Show the image with highlights and report on the majority of moods detected
-      if joyful_faces and joyful_faces > angry_faces:
+      if face_sentiments['joy'] and face_sentiments['joy'] > (face_sentiments['angry'] + face_sentiments['meh']):
         print("YAY!!! A happy scene!")
-      elif angry_faces and joyful_faces < angry_faces:
+      elif face_sentiments['angry'] and face_sentiments['angry'] > (face_sentiments['joy'] + face_sentiments['meh']):
         print("Uh oh!!!  An angry scene!")
-      elif joyful_faces or angry_faces:
+      elif  face_sentiments['joy'] or  face_sentiments['angry']:
         print("A mixed crowd.")
       else:
         print("meh.")
