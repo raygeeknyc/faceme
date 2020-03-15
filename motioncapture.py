@@ -1,20 +1,18 @@
-_Pi = False
 _Pi = True
+_Pi = False
 
 import logging
 
 # Import the packages we need for drawing and displaying images
 from PIL import Image, ImageDraw
 
-import multiprocessing
-from multiprocessingloghandler import ChildMultiProcessingLogHandler, ParentMultiProcessingLogHandler
 from random import randint
 import io
 import sys
 import os
 import time
 import signal
-import Queue
+import queue
 import numpy
 import cv2
 
@@ -36,9 +34,8 @@ FRAME_LATENCY_WINDOW_SIZE_SECS = 1.0
 
 EMPTY_LABELS = []
 
-class ImageProducer(multiprocessing.Process):
+class ImageCapture(object):
     def __init__(self, event, key_frame_queue, log_queue, logging_level):
-        multiprocessing.Process.__init__(self)
         self._exit = event
         self._log_queue = log_queue
         self._logging_level = logging_level
@@ -100,7 +97,7 @@ class ImageProducer(multiprocessing.Process):
                 motion = self.calculate_image_difference()
                 self._motion_threshold = min(motion, self._motion_threshold)
             trained = True
-        except Exception, e:
+        except Exception as e:
             logging.exception("Error training motion")
             trained = False
             sys.exit(1)
@@ -114,7 +111,7 @@ class ImageProducer(multiprocessing.Process):
         self._attempt_motion_training()
         try:
             self._capture_frames()
-        except Exception, e:
+        except Exception as e:
             logging.exception("Error in vision main thread")
         finally:
             self._cleanup()
@@ -140,7 +137,7 @@ class ImageProducer(multiprocessing.Process):
                 if self.is_image_difference_over_threshold(self._motion_threshold):
                     logging.debug("Motion detected")
                     self._key_frame_queue.put((self._current_frame_seq, self._current_frame))
-        except Exception, e:
+        except Exception as e:
             logging.exception("Error in capture_frames")
         logging.debug("Exiting vision capture thread")
 
@@ -148,7 +145,7 @@ class ImageProducer(multiprocessing.Process):
         logging.debug("closing key frame queue")
         self._key_frame_queue.close()
 
-class WebcamImageProducer(ImageProducer):
+class WebcamImageCapture(ImageCapture):
   def _init_camera(self):
     self._camera = cv2.VideoCapture(0)
 
@@ -167,7 +164,7 @@ class WebcamImageProducer(ImageProducer):
   def _close_video(self):
       self._camera.release()
 
-class PiImageProducer(ImageProducer):
+class PiImageCapture(ImageCapture):
   def _init_camera(self):
     self._camera = PiCamera()
     self._camera.resolution = RESOLUTION
@@ -190,7 +187,7 @@ if _Pi:
   logging.debug("Using PiCamera for video capture")
   from picamera import PiCamera
   from picamera.array import PiRGBArray
-  frame_provider = PiImageProducer
+  frame_provider = PiImageCapture
 else:
   import cv2
-  frame_provider = WebcamImageProducer
+  frame_provider = WebcamImageCapture
