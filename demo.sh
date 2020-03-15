@@ -1,4 +1,10 @@
 #!/bin/bash
-export GOOGLE_APPLICATION_CREDENTIALS=`ls ../workgee*json | head -1`
-echo "CREDS: $GOOGLE_APPLICATION_CREDENTIALS"
-for img in resources/*;do echo $img;python faceme.py $img;echo "next...";sleep 1;done
+PYTHON=$(which python3)
+export GOOGLE_APPLICATION_CREDENTIALS=`ls ../*credentials*.json | head -1`
+if [[ -r "$GOOGLE_APPLICATION_CREDENTIALS" ]]; then
+  echo "CREDS: $GOOGLE_APPLICATION_CREDENTIALS"
+else
+  echo "No credentials file." >&2
+  exit -1
+fi
+$PYTHON faceme.py resources/*
