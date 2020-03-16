@@ -189,6 +189,7 @@ def main():
     time.sleep(2)
     frame_capturer.stop()
     frame_source.join()
+    logging.info("captured %d frames", key_frame_queue.qsize())
     logging.info("exiting %s", sys.argv[0])
     sys.exit(0)
 
