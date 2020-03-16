@@ -1,3 +1,5 @@
+#!/usr/bin/python3
+# above is not used on macOS
 _Pi = True
 _Pi = False
 
