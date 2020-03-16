@@ -32,8 +32,6 @@ POLL_SECS = 0.1
 
 FRAME_LATENCY_WINDOW_SIZE_SECS = 1.0
 
-EMPTY_LABELS = []
-
 class ImageCapture(object):
     def __init__(self, event, key_frame_queue, log_queue, logging_level):
         self._exit = event
@@ -45,11 +43,6 @@ class ImageCapture(object):
         self._current_frame_seq = 0
         self._frame_window_start = 0
         self._frame_latency_window_start = 0
-
-    def _init_logging(self):
-        handler = ChildMultiProcessingLogHandler(self._log_queue)
-        logging.getLogger(str(os.getpid())).addHandler(handler)
-        logging.getLogger(str(os.getpid())).setLevel(self._logging_level)
 
     def get_next_frame(self):
         delay = (self._last_frame_at + self._frame_delay_secs) - time.time()
@@ -99,23 +92,15 @@ class ImageCapture(object):
             trained = True
         except Exception as e:
             logging.exception("Error training motion")
-            trained = False
-            sys.exit(1)
         logging.debug("Trained {}".format(trained))
         return trained
 
-    def run(self):
-        self._init_logging()
-        logging.debug("Image producer running")
+    def configure_capture(self):
         self._init_camera()
-        self._attempt_motion_training()
-        try:
-            self._capture_frames()
-        except Exception as e:
-            logging.exception("Error in vision main thread")
-        finally:
-            self._cleanup()
-            logging.debug("Exiting image capture")
+        if not self._attempt_motion_training():
+            logging.error("Unable to train motion, exiting.")
+            return False
+        return True
 
     def _init_camera(self):
         logging.error("overide _init_camera()")
@@ -124,22 +109,19 @@ class ImageCapture(object):
         logging.debug("Training motion detection")
         for retry in xrange(3):
             if self._train_motion():
-                break
-        logging.info("Trained motion detection {}".format(self._motion_threshold))
+                logging.info("Trained motion detection {}".format(self._motion_threshold))
+                return True
+        return False
 
-    def _capture_frames(self):
+    def capture_frames(self):
         logging.debug("capturing frames")
-        try:
-            self.get_next_frame()
-            while not self._exit.is_set():
-                self._prev_frame = self._current_frame
-                self.get_next_frame()
-                if self.is_image_difference_over_threshold(self._motion_threshold):
-                    logging.debug("Motion detected")
-                    self._key_frame_queue.put((self._current_frame_seq, self._current_frame))
-        except Exception as e:
-            logging.exception("Error in capture_frames")
-        logging.debug("Exiting vision capture thread")
+        self.get_next_frame()
+        while not self._exit.is_set():
+           self._prev_frame = self._current_frame
+           self.get_next_frame()
+           if self.is_image_difference_over_threshold(self._motion_threshold):
+               logging.debug("Motion detected")
+               self._key_frame_queue.put((self._current_frame_seq, self._current_frame))
 
     def _cleanup(self):
         logging.debug("closing key frame queue")
