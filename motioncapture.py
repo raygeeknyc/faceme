@@ -4,6 +4,7 @@ _Pi = True
 _Pi = False
 
 import logging
+logging.getLogger().setLevel(logging.INFO)
 
 # Import the packages we need for drawing and displaying images
 from PIL import Image, ImageDraw
@@ -12,6 +13,7 @@ from random import randint
 import io
 import sys
 import os
+import threading
 import time
 import signal
 import queue
@@ -35,10 +37,9 @@ POLL_SECS = 0.1
 FRAME_LATENCY_WINDOW_SIZE_SECS = 1.0
 
 class ImageCapture(object):
-    def __init__(self, event, key_frame_queue, log_queue, logging_level):
-        self._exit = event
-        self._log_queue = log_queue
-        self._logging_level = logging_level
+    def __init__(self, is_camera_pi, key_frame_queue):
+        self._stop = False
+        self._set_camera_type(is_camera_pi)
         self._key_frame_queue = key_frame_queue
         self._last_frame_at = 0.0
         self._frame_delay_secs = 1.0/CAPTURE_RATE_FPS
@@ -46,12 +47,23 @@ class ImageCapture(object):
         self._frame_window_start = 0
         self._frame_latency_window_start = 0
 
+    def stop(self):
+        logging.info("stop()")
+        self._stop = True
+
+    def _set_camera_type(self, use_pi_camera):
+        if use_pi_camera:
+            logging.debug("Using PiCamera for video capture")
+            self._frame_provider = PiCamera()
+        else:
+            self._frame_provider = WebCamera()
+
     def get_next_frame(self):
         delay = (self._last_frame_at + self._frame_delay_secs) - time.time()
         if delay > 0:
             logging.debug("frame delay: {}".format(delay))
             time.sleep(delay)
-        self._current_frame = self._get_frame()
+        self._current_frame = self._frame_provider.get_frame()
         self._last_frame_at = time.time()
         self._current_frame_seq += 1
         if time.time() > (self._frame_latency_window_start + FRAME_LATENCY_WINDOW_SIZE_SECS):
@@ -67,7 +79,7 @@ class ImageCapture(object):
         pixel_step = int((RESOLUTION[0] * RESOLUTION[1])/(MOTION_DETECT_SAMPLE * RESOLUTION[0] * RESOLUTION[1]))
         current_pixels = self._current_frame.reshape((RESOLUTION[0] * RESOLUTION[1]), 3)
         prev_pixels = self._prev_frame.reshape((RESOLUTION[0] * RESOLUTION[1]), 3)
-        for pixel_index in xrange(0, RESOLUTION[0]*RESOLUTION[1], pixel_step):
+        for pixel_index in range(0, RESOLUTION[0]*RESOLUTION[1], pixel_step):
             if abs(int(current_pixels[pixel_index][1]) - int(prev_pixels[pixel_index][1])) > PIXEL_SHIFT_SENSITIVITY:
                 changed_pixels += 1
                 if tolerance and changed_pixels > tolerance:
@@ -87,7 +99,7 @@ class ImageCapture(object):
             self._motion_threshold = 9999
             self.get_next_frame()
             for i in range(TRAINING_SAMPLES):
-                self._prev_frame = self._get_frame()
+                self._prev_frame = self._frame_provider.get_frame()
                 self.get_next_frame()
                 motion = self.calculate_image_difference()
                 self._motion_threshold = min(motion, self._motion_threshold)
@@ -98,18 +110,15 @@ class ImageCapture(object):
         return trained
 
     def configure_capture(self):
-        self._init_camera()
+        self._frame_provider._init_camera()
         if not self._attempt_motion_training():
             logging.error("Unable to train motion, exiting.")
             return False
         return True
 
-    def _init_camera(self):
-        logging.error("overide _init_camera()")
-
     def _attempt_motion_training(self):
         logging.debug("Training motion detection")
-        for retry in xrange(3):
+        for retry in range(3):
             if self._train_motion():
                 logging.info("Trained motion detection {}".format(self._motion_threshold))
                 return True
@@ -118,7 +127,7 @@ class ImageCapture(object):
     def capture_frames(self):
         logging.debug("capturing frames")
         self.get_next_frame()
-        while not self._exit.is_set():
+        while not self._stop:
            self._prev_frame = self._current_frame
            self.get_next_frame()
            if self.is_image_difference_over_threshold(self._motion_threshold):
@@ -129,34 +138,37 @@ class ImageCapture(object):
         logging.debug("closing key frame queue")
         self._key_frame_queue.close()
 
-class WebcamImageCapture(ImageCapture):
+class WebCamera(object):
   def _init_camera(self):
-    self._camera = cv2.VideoCapture(0)
+    import cv2
 
+    self._camera = cv2.VideoCapture(0)
     if not self._camera.isOpened():
       logging.error("Video camera not opened")
-      sys.exit(255)
+      sys.exit(-1)
 
     self._camera.set(3, RESOLUTION[0])
     self._camera.set(4, RESOLUTION[1])
 
-
-  def _get_frame(self):
+  def get_frame(self):
       _, frame = self._camera.read()
       return frame
 
   def _close_video(self):
       self._camera.release()
 
-class PiImageCapture(ImageCapture):
+class PiCamera(object):
   def _init_camera(self):
+    from picamera import PiCamera
+    from picamera.array import PiRGBArray
+
     self._camera = PiCamera()
     self._camera.resolution = RESOLUTION
     self._camera.vflip = False
     self._camera.framerate = 32
     self._image_buffer = io.BytesIO()
 
-  def _get_frame(self):
+  def get_frame(self):
       self._camera.capture(self._image_buffer, format="jpeg", use_video_port=True)
       self._image_buffer.seek(0)
       data = numpy.fromstring(self._image_buffer.getvalue(), dtype=numpy.uint8)
@@ -167,11 +179,18 @@ class PiImageCapture(ImageCapture):
   def _close_video(self):
       self._camera.close()
 
-if _Pi:
-  logging.debug("Using PiCamera for video capture")
-  from picamera import PiCamera
-  from picamera.array import PiRGBArray
-  frame_provider = PiImageCapture
-else:
-  import cv2
-  frame_provider = WebcamImageCapture
+def main():
+    logging.info("running %s", sys.argv[0])
+    key_frame_queue = queue.Queue()
+    frame_capturer = ImageCapture(_Pi, key_frame_queue)
+    frame_capturer.configure_capture()
+    frame_source = threading.Thread(target=frame_capturer.capture_frames)
+    frame_source.start()
+    time.sleep(2)
+    frame_capturer.stop()
+    frame_source.join()
+    logging.info("exiting %s", sys.argv[0])
+    sys.exit(0)
+
+if __name__ == "__main__":
+    main()
