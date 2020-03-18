@@ -123,7 +123,7 @@ class ImageCapture(object):
     def capture_frames(self):
         self._current_frame_seq = 0
         logging.debug("capturing frames")
-        self.get_next_frame()
+        self.get_next_frame()  # To give the initial motion detection a baseline
         while not self._stop:
            self._prev_frame = self._current_frame
            self.get_next_frame()
@@ -178,6 +178,17 @@ class PiCamera(object):
   def _close_video(self):
       self._camera.close()
 
+def generate_delta_image(frames):
+    logging.info("frames %d,%d", frames[0][0], frames[1][0])
+    time.sleep(0.2)
+
+def collect_key_frame_pairs(key_frames, new_frame):
+    key_frames.append(new_frame)
+    if len(key_frames) == 2:
+        generate_delta_image(key_frames)
+        key_frames = []
+    return key_frames
+
 def main():
     logging.info("running %s", sys.argv[0])
     key_frame_queue = queue.Queue()
@@ -185,17 +196,22 @@ def main():
     frame_capturer.configure_capture()
     frame_source = threading.Thread(target=frame_capturer.capture_frames)
     frame_source.start()
-    time.sleep(DEMO_CAPTURE_SECS)
+    start_capture = time.time()
+    end_capture = start_capture + DEMO_CAPTURE_SECS
+    key_frames = []
+    num_frames = 0
+    while time.time() < end_capture:
+        if not key_frame_queue.empty():
+            num_frames += 1
+            key_frames = collect_key_frame_pairs(key_frames, key_frame_queue.get())
     frame_capturer.stop()
     frame_source.join()
-    low_frame = 9999
-    high_frame = 0
-    num_frames = key_frame_queue.qsize()
+    logging.info("%d frames at producer stop", num_frames)
     while not key_frame_queue.empty():
-       seq, frame = key_frame_queue.get_nowait()
-       low_frame = min(low_frame, seq)
-       high_frame = max(high_frame, seq)
-    logging.info("captured %d key frames [%d - %d] in %f seconds", num_frames, low_frame, high_frame, DEMO_CAPTURE_SECS)
+        num_frames += 1
+        key_frames = collect_key_frame_pairs(key_frames, key_frame_queue.get())
+        
+    logging.info("captured %d key frames in %f seconds", num_frames, DEMO_CAPTURE_SECS)
     logging.info("exiting %s", sys.argv[0])
     sys.exit(0)
 
