@@ -20,14 +20,18 @@ import queue
 import numpy
 import cv2
 
+
+# This is how long to capture frames in the demo main application
+DEMO_CAPTURE_SECS = 3.0
+
 # This is the desired resolution of the camera
 RESOLUTION = (320, 240)
 # This is the desired maximum frame capture rate of the camera
-CAPTURE_RATE_FPS = 5.0
+CAPTURE_RATE_FPS = 10.0
 # This value was determined from over an observed covered camera's noise
 TRAINING_SAMPLES = 5
 # This is how much the green channel has to change to consider a pixel changed
-PIXEL_SHIFT_SENSITIVITY = 30
+PIXEL_SHIFT_SENSITIVITY = 50
 # This is the portion of pixels to compare when detecting motion
 MOTION_DETECT_SAMPLE = 1.0/10  # so... 10%? (Kudos to Sarah Cooper)
 
@@ -44,8 +48,6 @@ class ImageCapture(object):
         self._last_frame_at = 0.0
         self._frame_delay_secs = 1.0/CAPTURE_RATE_FPS
         self._current_frame_seq = 0
-        self._frame_window_start = 0
-        self._frame_latency_window_start = 0
 
     def stop(self):
         logging.info("stop()")
@@ -53,7 +55,6 @@ class ImageCapture(object):
 
     def _set_camera_type(self, use_pi_camera):
         if use_pi_camera:
-            logging.debug("Using PiCamera for video capture")
             self._frame_provider = PiCamera()
         else:
             self._frame_provider = WebCamera()
@@ -66,11 +67,6 @@ class ImageCapture(object):
         self._current_frame = self._frame_provider.get_frame()
         self._last_frame_at = time.time()
         self._current_frame_seq += 1
-        if time.time() > (self._frame_latency_window_start + FRAME_LATENCY_WINDOW_SIZE_SECS):
-          window_fps = (self._current_frame_seq - self._frame_window_start)/(time.time() - self._frame_latency_window_start)
-          logging.debug("Frame {}, window {} in {} secs, fp/s: {}, delay: {}".format(self._current_frame_seq, (self._current_frame_seq - self._frame_window_start), (time.time() - self._frame_latency_window_start), window_fps, self._frame_delay_secs))
-          self._frame_window_start = self._current_frame_seq
-          self._frame_latency_window_start = time.time()
 
     def calculate_image_difference(self, tolerance=None, sample_percentage=MOTION_DETECT_SAMPLE):
         "Detect changes in the green channel."
@@ -125,6 +121,7 @@ class ImageCapture(object):
         return False
 
     def capture_frames(self):
+        self._current_frame_seq = 0
         logging.debug("capturing frames")
         self.get_next_frame()
         while not self._stop:
@@ -142,6 +139,7 @@ class WebCamera(object):
   def _init_camera(self):
     import cv2
 
+    logging.info("Using WebCam for video capture")
     self._camera = cv2.VideoCapture(0)
     if not self._camera.isOpened():
       logging.error("Video camera not opened")
@@ -162,6 +160,7 @@ class PiCamera(object):
     from picamera import PiCamera
     from picamera.array import PiRGBArray
 
+    logging.info("Using PiCamera for video capture")
     self._camera = PiCamera()
     self._camera.resolution = RESOLUTION
     self._camera.vflip = False
@@ -186,10 +185,17 @@ def main():
     frame_capturer.configure_capture()
     frame_source = threading.Thread(target=frame_capturer.capture_frames)
     frame_source.start()
-    time.sleep(2)
+    time.sleep(DEMO_CAPTURE_SECS)
     frame_capturer.stop()
     frame_source.join()
-    logging.info("captured %d frames", key_frame_queue.qsize())
+    low_frame = 9999
+    high_frame = 0
+    num_frames = key_frame_queue.qsize()
+    while not key_frame_queue.empty():
+       seq, frame = key_frame_queue.get_nowait()
+       low_frame = min(low_frame, seq)
+       high_frame = max(high_frame, seq)
+    logging.info("captured %d key frames [%d - %d] in %f seconds", num_frames, low_frame, high_frame, DEMO_CAPTURE_SECS)
     logging.info("exiting %s", sys.argv[0])
     sys.exit(0)
 
