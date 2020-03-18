@@ -40,6 +40,28 @@ POLL_SECS = 0.1
 
 FRAME_LATENCY_WINDOW_SIZE_SECS = 1.0
 
+def calculate_image_difference(image_1, image_2, tolerance=None, sample_percentage=MOTION_DETECT_SAMPLE, record_delta=False):
+    "Detect changes in the green channel."
+    delta_pixels = None
+    if record_delta:
+        delta_pixels = []
+    s=time.time()
+    changed_pixels = 0
+    pixel_step = int((RESOLUTION[0] * RESOLUTION[1])/(MOTION_DETECT_SAMPLE * RESOLUTION[0] * RESOLUTION[1]))
+    current_pixels = image_2.reshape((RESOLUTION[0] * RESOLUTION[1]), 3)
+    prev_pixels = image_1.reshape((RESOLUTION[0] * RESOLUTION[1]), 3)
+    for pixel_index in range(0, RESOLUTION[0]*RESOLUTION[1], pixel_step):
+        if abs(int(current_pixels[pixel_index][1]) - int(prev_pixels[pixel_index][1])) > PIXEL_SHIFT_SENSITIVITY:
+            changed_pixels += 1
+            if record_delta:
+                delta_pixels.append(pixel_index)
+            if tolerance and changed_pixels > tolerance:
+              logging.debug("Image diff short circuited at: {}".format(time.time() - s))
+              return (changed_pixels, delta_pixels)
+    logging.debug("Image diff took: {}".format(time.time() - s))
+    return (changed_pixels, delta_pixels)
+
+
 class ImageCapture(object):
     def __init__(self, is_camera_pi, key_frame_queue):
         self._stop = False
@@ -68,24 +90,8 @@ class ImageCapture(object):
         self._last_frame_at = time.time()
         self._current_frame_seq += 1
 
-    def calculate_image_difference(self, tolerance=None, sample_percentage=MOTION_DETECT_SAMPLE):
-        "Detect changes in the green channel."
-        s=time.time()
-        changed_pixels = 0
-        pixel_step = int((RESOLUTION[0] * RESOLUTION[1])/(MOTION_DETECT_SAMPLE * RESOLUTION[0] * RESOLUTION[1]))
-        current_pixels = self._current_frame.reshape((RESOLUTION[0] * RESOLUTION[1]), 3)
-        prev_pixels = self._prev_frame.reshape((RESOLUTION[0] * RESOLUTION[1]), 3)
-        for pixel_index in range(0, RESOLUTION[0]*RESOLUTION[1], pixel_step):
-            if abs(int(current_pixels[pixel_index][1]) - int(prev_pixels[pixel_index][1])) > PIXEL_SHIFT_SENSITIVITY:
-                changed_pixels += 1
-                if tolerance and changed_pixels > tolerance:
-                  logging.debug("Image diff short circuited at: {}".format(time.time() - s))
-                  return changed_pixels
-        logging.debug("Image diff took: {}".format(time.time() - s))
-        return changed_pixels
-
     def is_image_difference_over_threshold(self, changed_pixels_threshold):
-        changed_pixels = self.calculate_image_difference(changed_pixels_threshold)
+        changed_pixels, _ = calculate_image_difference(self._prev_frame, self._current_frame, tolerance=changed_pixels_threshold)
         return changed_pixels > changed_pixels_threshold
 
     def _train_motion(self):
@@ -97,7 +103,7 @@ class ImageCapture(object):
             for i in range(TRAINING_SAMPLES):
                 self._prev_frame = self._frame_provider.get_frame()
                 self.get_next_frame()
-                motion = self.calculate_image_difference()
+                motion, _ = calculate_image_difference(self._prev_frame, self._current_frame)
                 self._motion_threshold = min(motion, self._motion_threshold)
             trained = True
         except Exception as e:
@@ -180,7 +186,8 @@ class PiCamera(object):
 
 def generate_delta_image(frames):
     logging.info("frames %d,%d", frames[0][0], frames[1][0])
-    time.sleep(0.2)
+    _, delta_pixels = calculate_image_difference(frames[0][1], frames[1][1], tolerance=None, sample_percentage=100, record_delta=True)
+    logging.info("%d pixels changed", len(delta_pixels))
 
 def collect_key_frame_pairs(key_frames, new_frame):
     key_frames.append(new_frame)
