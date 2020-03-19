@@ -31,17 +31,13 @@ CAPTURE_RATE_FPS = 5.0
 # This value was determined from over an observed covered camera's noise
 TRAINING_SAMPLES = 5
 # This is how much the green channel has to change to consider a pixel changed
-PIXEL_SHIFT_SENSITIVITY = 70
+PIXEL_SHIFT_SENSITIVITY = 50
 # This is the portion of pixels to compare when detecting motion
 MOTION_DETECT_SAMPLE = 1.0/5  # so... 20%? (Kudos to Sarah Cooper)
 
 # This is the amount to dim the at rest portions of a key frame in the demo
 PIXEL_DIMMING_PERCENTAGE = 0.6
 
-# This is how long to sleep in various threads between shutdown checks
-POLL_SECS = 0.1
-
-FRAME_LATENCY_WINDOW_SIZE_SECS = 1.0
 
 def calculate_image_difference(image_1, image_2, tolerance=None, sample_percentage=MOTION_DETECT_SAMPLE, record_delta=False):
     "Detect changes in the green channel."
@@ -87,7 +83,6 @@ class ImageCapture(object):
     def get_next_frame(self):
         delay = (self._last_frame_at + self._frame_delay_secs) - time.time()
         if delay > 0:
-            logging.debug("frame delay: {}".format(delay))
             time.sleep(delay)
         self._current_frame = self._frame_provider.get_frame()
         self._last_frame_at = time.time()
@@ -139,6 +134,7 @@ class ImageCapture(object):
            if self.is_image_difference_over_threshold(self._motion_threshold):
                logging.debug("Motion detected")
                self._key_frame_queue.put((self._current_frame_seq, self._current_frame))
+        logging.info("captured %d frames", self._current_frame_seq)
 
     def _cleanup(self):
         logging.debug("closing key frame queue")
@@ -231,18 +227,11 @@ def main():
     frame_capturer.configure_capture()
     frame_source = threading.Thread(target=frame_capturer.capture_frames)
     frame_source.start()
-    start_capture = time.time()
-    end_capture = start_capture + DEMO_CAPTURE_SECS
-    key_frames = []
-    num_key_pairs = 0
-    while time.time() < end_capture:
-        if not key_frame_queue.empty():
-            if len(key_frames) == 1:
-                num_key_pairs += 1
-            key_frames = process_key_frame_pairs(key_frames, key_frame_queue.get())
-
+    time.sleep(DEMO_CAPTURE_SECS)
     frame_capturer.stop()
     frame_source.join()
+    key_frames = []
+    num_key_pairs = 0
     logging.info("%d pairs at producer stop", num_key_pairs)
     while not key_frame_queue.empty():
         if len(key_frames) == 1:
