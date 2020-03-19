@@ -33,7 +33,10 @@ TRAINING_SAMPLES = 5
 # This is how much the green channel has to change to consider a pixel changed
 PIXEL_SHIFT_SENSITIVITY = 50
 # This is the portion of pixels to compare when detecting motion
-MOTION_DETECT_SAMPLE = 1.0/10  # so... 10%? (Kudos to Sarah Cooper)
+MOTION_DETECT_SAMPLE = 1.0/5  # so... 20%? (Kudos to Sarah Cooper)
+
+# This is the amount to dim the at rest portions of a key frame in the demo
+PIXEL_DIMMING_PERCENTAGE = 0.6
 
 # This is how long to sleep in various threads between shutdown checks
 POLL_SECS = 0.1
@@ -91,7 +94,8 @@ class ImageCapture(object):
         self._current_frame_seq += 1
 
     def is_image_difference_over_threshold(self, changed_pixels_threshold):
-        changed_pixels, _ = calculate_image_difference(self._prev_frame, self._current_frame, tolerance=changed_pixels_threshold)
+#        changed_pixels, _ = calculate_image_difference(self._prev_frame, self._current_frame, tolerance=changed_pixels_threshold)
+        changed_pixels, _ = calculate_image_difference(self._prev_frame, self._current_frame)
         return changed_pixels > changed_pixels_threshold
 
     def _train_motion(self):
@@ -184,17 +188,42 @@ class PiCamera(object):
   def _close_video(self):
       self._camera.close()
 
+
 def generate_delta_image(frames):
     logging.info("frames %d,%d", frames[0][0], frames[1][0])
     _, delta_pixels = calculate_image_difference(frames[0][1], frames[1][1], tolerance=None, sample_percentage=100, record_delta=True)
-    logging.info("%d pixels changed", len(delta_pixels))
+    total_delta = len(delta_pixels)
+    logging.info("%d pixels changed", total_delta)
+    if not total_delta:
+        return (0, None)
+    delta_index = 0
+    highlight_image = frames[1][1]
+    delta_completed = False
+    for pixel_x in range(0, RESOLUTION[1]):
+        for pixel_y in range(0, RESOLUTION[0]):
+            pixel_index = pixel_x*RESOLUTION[0]+pixel_y
+            if delta_completed or pixel_index < delta_pixels[delta_index]:
+                highlight_image[pixel_x][pixel_y][:] = [x * PIXEL_DIMMING_PERCENTAGE for x in highlight_image[pixel_x][pixel_y]]
+            else:
+                delta_index += 1
+                if delta_index == len(delta_pixels):
+                    delta_completed = True
+                    break
+        if delta_completed:
+            break
+    return (total_delta, highlight_image)
 
-def collect_key_frame_pairs(key_frames, new_frame):
+
+def process_key_frame_pairs(key_frames, new_frame):
     key_frames.append(new_frame)
     if len(key_frames) == 2:
-        generate_delta_image(key_frames)
-        key_frames = []
+        total_delta, delta_image = generate_delta_image(key_frames)
+        if total_delta:
+            cv2.imshow("frame {} - {}".format(key_frames[1][0], total_delta), delta_image)
+            cv2.waitKey(200)
+        key_frames = [key_frames[1]]
     return key_frames
+
 
 def main():
     logging.info("running %s", sys.argv[0])
@@ -210,17 +239,21 @@ def main():
     while time.time() < end_capture:
         if not key_frame_queue.empty():
             num_frames += 1
-            key_frames = collect_key_frame_pairs(key_frames, key_frame_queue.get())
+            key_frames = process_key_frame_pairs(key_frames, key_frame_queue.get())
     frame_capturer.stop()
     frame_source.join()
     logging.info("%d frames at producer stop", num_frames)
     while not key_frame_queue.empty():
         num_frames += 1
-        key_frames = collect_key_frame_pairs(key_frames, key_frame_queue.get())
+        key_frames = process_key_frame_pairs(key_frames, key_frame_queue.get())
         
     logging.info("captured %d key frames in %f seconds", num_frames, DEMO_CAPTURE_SECS)
+    logging.info("waiting for keypress")
+    cv2.waitKey()
+    cv2.destroyAllWindows()
     logging.info("exiting %s", sys.argv[0])
     sys.exit(0)
+
 
 if __name__ == "__main__":
     main()
