@@ -33,23 +33,25 @@ TRAINING_SAMPLES = 5
 # This is how much the green channel has to change to consider a pixel changed
 PIXEL_SHIFT_SENSITIVITY = 50
 # This is the portion of pixels to compare when detecting motion
-MOTION_DETECT_SAMPLE = 1.0/5  # so... 20%? (Kudos to Sarah Cooper)
+MOTION_DETECT_SAMPLE_PERCENTAGE = 5  # so... 1 twentieth? (Kudos to Sarah Cooper)
 
 # This is the amount to dim the at rest portions of a key frame in the demo
-PIXEL_DIMMING_PERCENTAGE = 0.6
+PIXEL_DIMMING_PERCENTAGE = 60
 
 
-def calculate_image_difference(image_1, image_2, tolerance=None, sample_percentage=MOTION_DETECT_SAMPLE, record_delta=False):
+def calculate_image_difference(image_1, image_2, tolerance=None, sample_percentage=MOTION_DETECT_SAMPLE_PERCENTAGE, record_delta=False):
     "Detect changes in the green channel."
     delta_pixels = None
     if record_delta:
         delta_pixels = []
     s=time.time()
     changed_pixels = 0
-    pixel_step = int((RESOLUTION[0] * RESOLUTION[1])/(MOTION_DETECT_SAMPLE * RESOLUTION[0] * RESOLUTION[1]))
-    current_pixels = image_2.reshape((RESOLUTION[0] * RESOLUTION[1]), 3)
-    prev_pixels = image_1.reshape((RESOLUTION[0] * RESOLUTION[1]), 3)
-    for pixel_index in range(0, RESOLUTION[0]*RESOLUTION[1], pixel_step):
+    pixel_count = RESOLUTION[0] * RESOLUTION[1]
+    pixel_step = int(pixel_count / round((sample_percentage/100) * pixel_count))
+    logging.debug("pct, step = %f, %d", sample_percentage, pixel_step)
+    current_pixels = image_2.reshape(pixel_count, 3)
+    prev_pixels = image_1.reshape(pixel_count, 3)
+    for pixel_index in range(0, pixel_count, pixel_step):
         if abs(int(current_pixels[pixel_index][1]) - int(prev_pixels[pixel_index][1])) > PIXEL_SHIFT_SENSITIVITY:
             changed_pixels += 1
             if record_delta:
@@ -188,17 +190,18 @@ def generate_delta_image(frames):
     logging.info("frames %d,%d", frames[0][0], frames[1][0])
     _, delta_pixels = calculate_image_difference(frames[0][1], frames[1][1], sample_percentage=100, record_delta=True)
     total_delta = len(delta_pixels)
-    logging.info("%d pixels changed", total_delta)
+    logging.debug("%d pixels changed", total_delta)
     if not total_delta:
         return (0, None)
     delta_index = 0
     highlight_image = frames[1][1]
     delta_completed = False
+    dim_by = float(PIXEL_DIMMING_PERCENTAGE)/100
     for pixel_x in range(0, RESOLUTION[1]):
         for pixel_y in range(0, RESOLUTION[0]):
             pixel_index = pixel_x*RESOLUTION[0]+pixel_y
             if delta_completed or pixel_index < delta_pixels[delta_index]:
-                highlight_image[pixel_x][pixel_y][:] = [x * PIXEL_DIMMING_PERCENTAGE for x in highlight_image[pixel_x][pixel_y]]
+                highlight_image[pixel_x][pixel_y][:] = [x * dim_by for x in highlight_image[pixel_x][pixel_y]]
             else:
                 delta_index += 1
                 if delta_index == len(delta_pixels):
