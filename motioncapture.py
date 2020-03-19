@@ -27,11 +27,11 @@ DEMO_CAPTURE_SECS = 3.0
 # This is the desired resolution of the camera
 RESOLUTION = (320, 240)
 # This is the desired maximum frame capture rate of the camera
-CAPTURE_RATE_FPS = 10.0
+CAPTURE_RATE_FPS = 5.0
 # This value was determined from over an observed covered camera's noise
 TRAINING_SAMPLES = 5
 # This is how much the green channel has to change to consider a pixel changed
-PIXEL_SHIFT_SENSITIVITY = 50
+PIXEL_SHIFT_SENSITIVITY = 70
 # This is the portion of pixels to compare when detecting motion
 MOTION_DETECT_SAMPLE = 1.0/5  # so... 20%? (Kudos to Sarah Cooper)
 
@@ -94,8 +94,7 @@ class ImageCapture(object):
         self._current_frame_seq += 1
 
     def is_image_difference_over_threshold(self, changed_pixels_threshold):
-#        changed_pixels, _ = calculate_image_difference(self._prev_frame, self._current_frame, tolerance=changed_pixels_threshold)
-        changed_pixels, _ = calculate_image_difference(self._prev_frame, self._current_frame)
+        changed_pixels, _ = calculate_image_difference(self._prev_frame, self._current_frame, tolerance=changed_pixels_threshold)
         return changed_pixels > changed_pixels_threshold
 
     def _train_motion(self):
@@ -191,7 +190,7 @@ class PiCamera(object):
 
 def generate_delta_image(frames):
     logging.info("frames %d,%d", frames[0][0], frames[1][0])
-    _, delta_pixels = calculate_image_difference(frames[0][1], frames[1][1], tolerance=None, sample_percentage=100, record_delta=True)
+    _, delta_pixels = calculate_image_difference(frames[0][1], frames[1][1], sample_percentage=100, record_delta=True)
     total_delta = len(delta_pixels)
     logging.info("%d pixels changed", total_delta)
     if not total_delta:
@@ -220,7 +219,7 @@ def process_key_frame_pairs(key_frames, new_frame):
         total_delta, delta_image = generate_delta_image(key_frames)
         if total_delta:
             cv2.imshow("frame {} - {}".format(key_frames[1][0], total_delta), delta_image)
-            cv2.waitKey(200)
+            cv2.waitKey(50)
         key_frames = [key_frames[1]]
     return key_frames
 
@@ -235,19 +234,22 @@ def main():
     start_capture = time.time()
     end_capture = start_capture + DEMO_CAPTURE_SECS
     key_frames = []
-    num_frames = 0
+    num_key_pairs = 0
     while time.time() < end_capture:
         if not key_frame_queue.empty():
-            num_frames += 1
+            if len(key_frames) == 1:
+                num_key_pairs += 1
             key_frames = process_key_frame_pairs(key_frames, key_frame_queue.get())
+
     frame_capturer.stop()
     frame_source.join()
-    logging.info("%d frames at producer stop", num_frames)
+    logging.info("%d pairs at producer stop", num_key_pairs)
     while not key_frame_queue.empty():
-        num_frames += 1
+        if len(key_frames) == 1:
+            num_key_pairs += 1
         key_frames = process_key_frame_pairs(key_frames, key_frame_queue.get())
         
-    logging.info("captured %d key frames in %f seconds", num_frames, DEMO_CAPTURE_SECS)
+    logging.info("displayed %d key frames in %f seconds", num_key_pairs, DEMO_CAPTURE_SECS)
     logging.info("waiting for keypress")
     cv2.waitKey()
     cv2.destroyAllWindows()
