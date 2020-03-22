@@ -39,13 +39,25 @@ MOTION_DETECT_SAMPLE_PERCENTAGE = 5  # so... 1 twentieth? (Kudos to Sarah Cooper
 PIXEL_DIMMING_PERCENTAGE = 60
 
 
-def calculate_image_difference(image_1, image_2, tolerance=None, sample_percentage=MOTION_DETECT_SAMPLE_PERCENTAGE, record_delta=False):
-    "Detect changes in the green channel."
+def calculate_image_delta(image_1, image_2, tolerance=None, sample_percentage=MOTION_DETECT_SAMPLE_PERCENTAGE, record_delta=False):
+    """
+    Calculate the number of pixels that differ in the green channel.
+    Args:
+        image_1: The first of a pair of successive Frames
+        image_2: The second of a pair of successive Frames
+        tolerance: A trigger threshold for the number of pixels, once this is reached we exit without looking further
+        sample_percentage: The percentage of the image pixels to compare, we sample this percentage evenly distributed
+        record_delta: If True, record the offset of each changed pixel and return the list
+    Returns:
+        changed_pixel_count: The number of changed pixels detected, If tolerance, this will be tolerance or 0
+        delta_pixels: If record_delta, a list of the offsets of every changed pixel, changed_pixel_count in length
+    """
+
     delta_pixels = None
     if record_delta:
         delta_pixels = []
     s=time.time()
-    changed_pixels = 0
+    changed_pixel_count = 0
     pixel_count = RESOLUTION[0] * RESOLUTION[1]
     pixel_step = int(pixel_count / round((sample_percentage/100) * pixel_count))
     logging.debug("pct, step = %f, %d", sample_percentage, pixel_step)
@@ -53,14 +65,14 @@ def calculate_image_difference(image_1, image_2, tolerance=None, sample_percenta
     prev_pixels = image_1.reshape(pixel_count, 3)
     for pixel_index in range(0, pixel_count, pixel_step):
         if abs(int(current_pixels[pixel_index][1]) - int(prev_pixels[pixel_index][1])) > PIXEL_SHIFT_SENSITIVITY:
-            changed_pixels += 1
+            changed_pixel_count += 1
             if record_delta:
                 delta_pixels.append(pixel_index)
-            if tolerance and changed_pixels > tolerance:
+            if tolerance and changed_pixel_count > tolerance:
               logging.debug("Image diff short circuited at: {}".format(time.time() - s))
-              return (changed_pixels, delta_pixels)
+              return (changed_pixel_count, delta_pixels)
     logging.debug("Image diff took: {}".format(time.time() - s))
-    return (changed_pixels, delta_pixels)
+    return (changed_pixel_count, delta_pixels)
 
 
 class ImageCapture(object):
@@ -73,7 +85,7 @@ class ImageCapture(object):
         self._current_frame_seq = 0
 
     def stop(self):
-        logging.info("stop()")
+        logging.debug("stop()")
         self._stop = True
 
     def _set_camera_type(self, use_pi_camera):
@@ -90,11 +102,13 @@ class ImageCapture(object):
         self._last_frame_at = time.time()
         self._current_frame_seq += 1
 
-    def is_image_difference_over_threshold(self, changed_pixels_threshold):
-        changed_pixels, _ = calculate_image_difference(self._prev_frame, self._current_frame, tolerance=changed_pixels_threshold)
+    def is_image_delta_over_threshold(self, changed_pixels_threshold):
+        changed_pixels, _ = calculate_image_delta(self._prev_frame, self._current_frame, tolerance=changed_pixels_threshold)
         return changed_pixels > changed_pixels_threshold
 
     def _train_motion(self):
+        "Set the motion threshold to the lowest number of changed pixels that are observed."
+
         logging.debug("Training motion")
         trained = False
         try:
@@ -103,7 +117,7 @@ class ImageCapture(object):
             for i in range(TRAINING_SAMPLES):
                 self._prev_frame = self._frame_provider.get_frame()
                 self.get_next_frame()
-                motion, _ = calculate_image_difference(self._prev_frame, self._current_frame)
+                motion, _ = calculate_image_delta(self._prev_frame, self._current_frame)
                 self._motion_threshold = min(motion, self._motion_threshold)
             trained = True
         except Exception as e:
@@ -113,27 +127,19 @@ class ImageCapture(object):
 
     def configure_capture(self):
         self._frame_provider._init_camera()
-        if not self._attempt_motion_training():
+        if not self._train_motion():
             logging.error("Unable to train motion, exiting.")
             return False
         return True
 
-    def _attempt_motion_training(self):
-        logging.debug("Training motion detection")
-        for retry in range(3):
-            if self._train_motion():
-                logging.info("Trained motion detection {}".format(self._motion_threshold))
-                return True
-        return False
-
     def capture_frames(self):
         self._current_frame_seq = 0
-        logging.debug("capturing frames")
+        logging.info("capturing frames")
         self.get_next_frame()  # To give the initial motion detection a baseline
         while not self._stop:
            self._prev_frame = self._current_frame
            self.get_next_frame()
-           if self.is_image_difference_over_threshold(self._motion_threshold):
+           if self.is_image_delta_over_threshold(self._motion_threshold):
                logging.debug("Motion detected")
                self._key_frame_queue.put((self._current_frame_seq, self._current_frame))
         logging.info("captured %d frames", self._current_frame_seq)
@@ -187,14 +193,16 @@ class PiCamera(object):
 
 
 def generate_delta_image(frames):
+    "Generate an image with the delta between the frames hilighted by dimming all other pixels."
+
     logging.info("frames %d,%d", frames[0][0], frames[1][0])
-    _, delta_pixels = calculate_image_difference(frames[0][1], frames[1][1], sample_percentage=100, record_delta=True)
+    _, delta_pixels = calculate_image_delta(frames[0][1], frames[1][1], sample_percentage=100, record_delta=True)
     total_delta = len(delta_pixels)
     logging.debug("%d pixels changed", total_delta)
     if not total_delta:
         return (0, None)
     delta_index = 0
-    highlight_image = frames[1][1]
+    highlight_image = frames[1][1].copy()
     delta_completed = False
     dim_by = float(PIXEL_DIMMING_PERCENTAGE)/100
     for pixel_x in range(0, RESOLUTION[1]):
@@ -212,7 +220,9 @@ def generate_delta_image(frames):
     return (total_delta, highlight_image)
 
 
-def process_key_frame_pairs(key_frames, new_frame):
+def display_key_frame_pairs(key_frames, new_frame):
+    "Collect pairs of new_frame and generate and display deltas of every pair."
+
     key_frames.append(new_frame)
     if len(key_frames) == 2:
         total_delta, delta_image = generate_delta_image(key_frames)
@@ -229,17 +239,18 @@ def main():
     frame_capturer = ImageCapture(_Pi, key_frame_queue)
     frame_capturer.configure_capture()
     frame_source = threading.Thread(target=frame_capturer.capture_frames)
+    # start frame provider and give the capture thread enough time to capture frames
     frame_source.start()
     time.sleep(DEMO_CAPTURE_SECS)
     frame_capturer.stop()
     frame_source.join()
     key_frames = []
     num_key_pairs = 0
-    logging.info("%d pairs at producer stop", num_key_pairs)
+    # collect all of the frames with motion that were detected
     while not key_frame_queue.empty():
         if len(key_frames) == 1:
             num_key_pairs += 1
-        key_frames = process_key_frame_pairs(key_frames, key_frame_queue.get())
+        key_frames = display_key_frame_pairs(key_frames, key_frame_queue.get())
         
     logging.info("displayed %d key frames in %f seconds", num_key_pairs, DEMO_CAPTURE_SECS)
     logging.info("waiting for keypress")
