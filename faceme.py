@@ -77,10 +77,10 @@ def findFaces(image, canvas):
     else:
       frame_width = 4
     # Classify this face as joyful, angry or meh
-    if likelihood_names[this_face.joy_likelihood] is 'VERY_LIKELY' or likelihood_names[this_face.joy_likelihood] is 'LIKELY':
+    if likelihood_names[this_face.joy_likelihood] == 'VERY_LIKELY' or likelihood_names[this_face.joy_likelihood] == 'LIKELY':
       frame_color = frame_color_joy
       face_sentiments['joy'] += 1
-    elif likelihood_names[this_face.anger_likelihood] is 'VERY_LIKELY' or likelihood_names[this_face.anger_likelihood] is 'LIKELY':
+    elif likelihood_names[this_face.anger_likelihood] == 'VERY_LIKELY' or likelihood_names[this_face.anger_likelihood] == 'LIKELY':
       frame_color = frame_color_angry
       face_sentiments['angry'] += 1
     else:
